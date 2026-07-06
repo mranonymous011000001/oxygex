@@ -41,7 +41,7 @@ jobs:
             libxft-dev libegl-dev libgl-dev libgles-dev libglvnd-dev \
             libwayland-dev libcloudproviders-dev libatspi2.0-dev libdbus-1-dev \
             libpam0g-dev liborc-0.4-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libunwind-dev \
             libpulse-dev libssl-dev pkg-config cmake nasm yasm
 
       - name: Cache cargo
