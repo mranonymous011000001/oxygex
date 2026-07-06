@@ -1,0 +1,14 @@
+target/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.lock
+!Cargo.lock
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.rs.bk
+generated/
