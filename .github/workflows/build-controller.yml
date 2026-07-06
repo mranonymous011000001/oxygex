@@ -1,0 +1,199 @@
+name: Build Controller (Full GUI)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'oxygex-controller/**'
+      - '.github/workflows/build-controller.yml'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  FLUTTER_VERSION: "3.24.0"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libvpx-dev libyuv-dev libaom-dev \
+            libxi-dev libxtst-dev libxfixes-dev libxdamage-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxrender-dev libxcomposite-dev \
+            libxext-dev libx11-dev libxdo-dev libxkbcommon-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb1-dev libxau-dev libxdmcp-dev \
+            libclang-dev libsodium-dev \
+            libgtk-3-dev libglib2.0-dev libcairo2-dev libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev libatk1.0-dev libatk-bridge2.0-dev \
+            libharfbuzz-dev libfreetype-dev libfontconfig1-dev libxml2-dev \
+            libxft-dev libegl-dev libgl-dev libgles-dev libglvnd-dev \
+            libwayland-dev libcloudproviders-dev libatspi2.0-dev libdbus-1-dev \
+            libpam0g-dev liborc-0.4-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libpulse-dev libssl-dev pkg-config cmake nasm yasm \
+            ninja-build liblzma-dev libstdc++-12-dev
+
+      - name: Flutter doctor
+        run: flutter doctor
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            oxygex-controller/target
+          key: ${{ runner.os }}-cargo-ctrl-${{ hashFiles('oxygex-controller/**/Cargo.toml') }}
+
+      - name: Cache flutter
+        uses: actions/cache@v4
+        with:
+          path: |
+            oxygex-controller/flutter/.dart_tool
+            ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('oxygex-controller/flutter/pubspec.yaml') }}
+
+      - name: Build Rust library
+        working-directory: oxygex-controller
+        env:
+          SODIUM_SHARED: "1"
+          SODIUM_USE_PKG_CONFIG: "1"
+        run: cargo build --release
+
+      - name: Install Flutter dependencies
+        working-directory: oxygex-controller/flutter
+        run: flutter pub get
+
+      - name: Build Flutter Linux
+        working-directory: oxygex-controller/flutter
+        run: flutter build linux --release
+
+      - name: Package Linux build
+        run: |
+          mkdir -p artifacts
+          cd oxygex-controller/flutter/build/linux/x64/release/bundle
+          tar czf /home/z/oxygex-repo/artifacts/oxygex-controller-linux-x86_64.tar.gz .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxygex-controller-linux-x86_64
+          path: artifacts/oxygex-controller-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Install vcpkg dependencies
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static aom:x64-windows-static
+        shell: cmd
+
+      - name: Flutter doctor
+        run: flutter doctor
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            oxygex-controller/target
+          key: ${{ runner.os }}-cargo-ctrl-${{ hashFiles('oxygex-controller/**/Cargo.toml') }}
+
+      - name: Cache flutter
+        uses: actions/cache@v4
+        with:
+          path: |
+            oxygex-controller/flutter/.dart_tool
+            ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('oxygex-controller/flutter/pubspec.yaml') }}
+
+      - name: Build Rust library
+        working-directory: oxygex-controller
+        env:
+          VCPKG_ROOT: C:\vcpkg
+        run: cargo build --release
+
+      - name: Install Flutter dependencies
+        working-directory: oxygex-controller/flutter
+        run: flutter pub get
+
+      - name: Build Flutter Windows
+        working-directory: oxygex-controller/flutter
+        env:
+          VCPKG_ROOT: C:\vcpkg
+        run: flutter build windows --release
+
+      - name: Package Windows build
+        run: |
+          mkdir -p artifacts
+          cd oxygex-controller\flutter\build\windows\x64\runner\Release
+          7z a C:\oxygex-repo\artifacts\oxygex-controller-windows-x86_64.zip *
+        shell: cmd
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxygex-controller-windows-x86_64
+          path: artifacts/oxygex-controller-windows-x86_64.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: controller-${{ github.run_number }}
+          name: Oxygex Controller Build ${{ github.run_number }}
+          files: |
+            artifacts/oxygex-controller-linux-x86_64/oxygex-controller-linux-x86_64.tar.gz
+            artifacts/oxygex-controller-windows-x86_64/oxygex-controller-windows-x86_64.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
