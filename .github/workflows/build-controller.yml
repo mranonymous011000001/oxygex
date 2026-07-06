@@ -52,6 +52,21 @@ jobs:
             libpulse-dev libssl-dev pkg-config cmake nasm yasm \
             ninja-build liblzma-dev libstdc++-12-dev
 
+      - name: Create libyuv.pc (Ubuntu doesn't ship one)
+        run: |
+          sudo tee /usr/lib/x86_64-linux-gnu/pkgconfig/libyuv.pc > /dev/null <<'EOF'
+          prefix=/usr
+          exec_prefix=${prefix}/lib/x86_64-linux-gnu
+          libdir=${exec_prefix}
+          includedir=${prefix}/include
+          Name: libyuv
+          Description: YUV scaling and conversion library
+          Version: 0.0
+          Libs: -L${libdir} -lyuv
+          Cflags: -I${includedir}
+          EOF
+          pkg-config --cflags --libs libyuv
+
       - name: Flutter doctor
         run: flutter doctor
 
@@ -120,7 +135,7 @@ jobs:
         run: |
           git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
           C:\vcpkg\bootstrap-vcpkg.bat
-          C:\vcpkg\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static aom:x64-windows-static
+          C:\vcpkg\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static aom:x64-windows-static opus:x64-windows-static
         shell: cmd
 
       - name: Flutter doctor
