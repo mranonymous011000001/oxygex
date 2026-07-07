@@ -131,10 +131,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
-      - name: Set up LLVM/Clang (for bindgen)
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "17"
 
       - name: Install vcpkg dependencies
         run: |
@@ -168,7 +164,7 @@ jobs:
         env:
           VCPKG_ROOT: C:\vcpkg
           LIBCLANG_PATH: "C:/Program Files/LLVM/bin"
-          BINDGEN_EXTRA_CLANG_ARGS: "-IC:/vcpkg/installed/x64-windows-static/include"
+          INCLUDE: "C:/vcpkg/installed/x64-windows-static/include"
         run: cargo build --release
 
       - name: Install Flutter dependencies
