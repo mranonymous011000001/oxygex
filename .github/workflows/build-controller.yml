@@ -162,9 +162,9 @@ jobs:
         working-directory: oxygex-controller
         env:
           VCPKG_ROOT: C:\vcpkg
-          VCPKG_INSTALLED_ROOT: C:\vcpkg\installed
-          BINDGEN_EXTRA_CLANG_ARGS: "-IC:\vcpkg\installed\x64-windows-static\include"
-          OPUS_INCLUDE_DIR: "C:\vcpkg\installed\x64-windows-static\include"
+          VCPKG_INSTALLED_ROOT: "C:/vcpkg/installed"
+          BINDGEN_EXTRA_CLANG_ARGS: "-IC:/vcpkg/installed/x64-windows-static/include"
+          OPUS_INCLUDE_DIR: "C:/vcpkg/installed/x64-windows-static/include"
         run: cargo build --release
 
       - name: Install Flutter dependencies
@@ -175,7 +175,7 @@ jobs:
         working-directory: oxygex-controller/flutter
         env:
           VCPKG_ROOT: C:\vcpkg
-          VCPKG_INSTALLED_ROOT: C:\vcpkg\installed
+          VCPKG_INSTALLED_ROOT: "C:/vcpkg/installed"
         run: flutter build windows --release
 
       - name: Package Windows build
