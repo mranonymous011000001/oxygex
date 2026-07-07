@@ -103,15 +103,20 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
 
-      - name: Install vcpkg dependencies
+      - name: Install vcpkg dependencies (manifest mode)
         run: |
           git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
           C:\vcpkg\bootstrap-vcpkg.bat
-          C:\vcpkg\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static aom:x64-windows-static opus:x64-windows-static
+          set VCPKG_ROOT=C:\vcpkg
+          C:\vcpkg\vcpkg.exe install --triplet x64-windows-static --x-manifest-root=oxygex-server --x-install-root=C:\vcpkg\installed
         shell: cmd
 
       - name: Verify vcpkg installed headers
         run: |
+          echo "=== Listing C:\vcpkg\installed ==="
+          dir C:\vcpkg\installed\
+          echo "=== Listing x64-windows-static ==="
+          dir C:\vcpkg\installed\x64-windows-static\
           echo "=== Checking opus headers ==="
           dir C:\vcpkg\installed\x64-windows-static\include\opus\
           echo "=== Checking libvpx headers ==="
