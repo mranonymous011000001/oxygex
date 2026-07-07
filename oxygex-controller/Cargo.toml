@@ -175,7 +175,7 @@ ttf-parser = "0.25"
 [target.'cfg(target_os = "linux")'.dependencies]
 libxdo-sys = "0.11"
 psimple = { package = "libpulse-simple-binding", version = "2.27" }
-pulse = { package = "libpulse-binding", version = "2.27" }
+pulse = { package = "libpulse-binding", version = "=2.27" }
 rust-pulsectl = { git = "https://github.com/rustdesk-org/pulsectl" }
 async-process = "1.7"
 evdev = { git="https://github.com/rustdesk-org/evdev" }

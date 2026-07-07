@@ -102,6 +102,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up LLVM/Clang (for bindgen)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+
       - name: Install vcpkg dependencies
         run: |
           git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
@@ -122,9 +127,8 @@ jobs:
         working-directory: oxygex-server
         env:
           VCPKG_ROOT: C:\vcpkg
-          VCPKG_INSTALLED_ROOT: "C:/vcpkg/installed"
+          LIBCLANG_PATH: "C:/Program Files/LLVM/bin"
           BINDGEN_EXTRA_CLANG_ARGS: "-IC:/vcpkg/installed/x64-windows-static/include"
-          OPUS_INCLUDE_DIR: "C:/vcpkg/installed/x64-windows-static/include"
         run: cargo build --release
 
       - name: Rename binary
