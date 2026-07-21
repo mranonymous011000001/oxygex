@@ -1,4 +1,4 @@
-name: SSH Runner (ngrok)
+name: Remote Runner (ngrok HTTP)
 
 on:
   workflow_dispatch:
@@ -10,72 +10,55 @@ on:
 
 env:
   NGROK_AUTHTOKEN: '3GoMs1CMDEWzLBBN9SgfA5DqZg4_2z5DyuaHKjUkPAu5HLAWk'
-  SSH_PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKN/qRATvzkj+FCG2Dj8Y7KUbQXUQuq3pGe2i9n5ApIX r@h'
+  REMOTE_API_KEY: 'hacx_remote_2024'
 
 jobs:
-  ssh:
+  runner:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Install openssh + ngrok
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ngrok
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq openssh-server
-          # ngrok via official apt repo
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/keyrings/ngrok.asc > /dev/null
           echo "deb [signed-by=/etc/apt/keyrings/ngrok.asc] https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq ngrok
           ngrok version
 
-      - name: Configure SSH
+      - name: Start Python API server
         run: |
-          sudo mkdir -p /run/sshd
-          # authorize our key for both runner and root
-          sudo mkdir -p /home/runner/.ssh
-          echo "${{ env.SSH_PUBKEY }}" | sudo tee /home/runner/.ssh/authorized_keys > /dev/null
-          sudo chmod 600 /home/runner/.ssh/authorized_keys
-          sudo chown -R runner:runner /home/runner/.ssh
-          # root too
-          sudo mkdir -p /root/.ssh
-          echo "${{ env.SSH_PUBKEY }}" | sudo tee /root/.ssh/authorized_keys > /dev/null
-          sudo chmod 600 /root/.ssh/authorized_keys
-          # sshd config
-          sudo sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-          sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-          sudo /usr/sbin/sshd
+          pip install -q -r scripts/requirements.txt 2>/dev/null || true
+          nohup python3 scripts/remote-runner.py > /tmp/api.log 2>&1 &
+          sleep 2
+          curl -s http://localhost:7860/health
+          echo ""
 
-      - name: Start ngrok TCP tunnel
-        shell: bash
+      - name: Start ngrok HTTP tunnel
         run: |
           set +e
           ngrok config add-authtoken "${{ env.NGROK_AUTHTOKEN }}"
-          # start ngrok in background
-          nohup ngrok tcp 22 > /tmp/ngrok.log 2>&1 &
+          nohup ngrok http 7860 > /tmp/ngrok.log 2>&1 &
           NGROK_PID=$!
           sleep 8
-          # check if ngrok is still running
           if ! kill -0 $NGROK_PID 2>/dev/null; then
-            echo "ngrok process died. Log:"
+            echo "ngrok died. Log:"
             cat /tmp/ngrok.log
             exit 1
           fi
-          # query ngrok API for the public URL
-          HOST=""
-          PORT=""
+          URL=""
           for i in $(seq 1 15); do
             TUNNEL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null)
-            PUBLIC_URL=$(echo "$TUNNEL" | grep -oP '"public_url":"tcp://[^"]*"' | head -1 | cut -d'"' -f4)
-            if [ -n "$PUBLIC_URL" ]; then
-              HOST=$(echo "$PUBLIC_URL" | sed 's|tcp://||;s|:.*||')
-              PORT=$(echo "$PUBLIC_URL" | sed 's|.*:||')
+            URL=$(echo "$TUNNEL" | grep -oP '"public_url":"https://[^"]*"' | head -1 | cut -d'"' -f4)
+            if [ -n "$URL" ]; then
               break
             fi
             sleep 2
           done
-          if [ -z "$HOST" ]; then
-            echo "Failed to get ngrok tunnel URL. Log:"
+          if [ -z "$URL" ]; then
+            echo "Failed to get ngrok URL. Log:"
             cat /tmp/ngrok.log
             echo "---API response---"
             curl -s http://localhost:4040/api/tunnels
@@ -83,32 +66,26 @@ jobs:
           fi
           echo ""
           echo "============================================"
-          echo "  SSH is ready!"
+          echo "  Remote runner is live!"
           echo ""
-          echo "  Host:   $HOST"
-          echo "  Port:   $PORT"
-          echo "  User:   runner (or root)"
+          echo "  URL: $URL"
+          echo "  API Key: ${{ env.REMOTE_API_KEY }}"
           echo ""
-          echo "  ssh -o StrictHostKeyChecking=no -i ~/.ssh/gh_runner runner@$HOST -p $PORT"
+          echo "  Test: curl -s $URL/health"
+          echo "  Run:  curl -s -X POST -H 'X-Api-Key: ${{ env.REMOTE_API_KEY }}' -H 'Content-Type: application/json' -d '{\"cmd\":\"uname -a\"}' $URL/run"
           echo "============================================"
-          echo "NGROK_DETAILS::$HOST:$PORT"
 
       - name: Install build tools
         run: |
-          # Node 22 (already installed on runner, but ensure)
           node --version
           npm --version
-          # Install bun
-          curl -fsSL https://bun.sh/install | bash
-          echo "Build tools ready: node, npm, bun"
+          npx --version
 
       - name: Keep alive
         run: |
           MINS=${{ github.event.inputs.keep_alive }}
           echo "Runner alive for $MINS minutes."
-          echo "SSH in and run your build."
-          echo "Touch /tmp/done when finished."
           for i in $(seq 1 $((MINS * 6))); do
-            [ -f /tmp/done ] && { echo "Done signal received."; exit 0; }
+            [ -f /tmp/done ] && { echo "Done."; exit 0; }
             sleep 10
           done
