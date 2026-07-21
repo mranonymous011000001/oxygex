@@ -1,0 +1,97 @@
+name: SSH Runner (ngrok)
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_alive:
+        description: 'Minutes to stay alive (max 360)'
+        required: false
+        default: '60'
+
+env:
+  NGROK_AUTHTOKEN: '3GoMs1CMDEWzLBBN9SgfA5DqZg4_2z5DyuaHKjUkPAu5HLAWk'
+  SSH_PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKN/qRATvzkj+FCG2Dj8Y7KUbQXUQuq3pGe2i9n5ApIX r@h'
+
+jobs:
+  ssh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Install openssh + ngrok
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server tmate
+          # ngrok
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-amd64.tgz | sudo tar xz -C /usr/local/bin
+          ngrok version
+
+      - name: Configure SSH
+        run: |
+          sudo mkdir -p /run/sshd
+          # authorize our key for both runner and root
+          sudo mkdir -p /home/runner/.ssh
+          echo "${{ env.SSH_PUBKEY }}" | sudo tee /home/runner/.ssh/authorized_keys > /dev/null
+          sudo chmod 600 /home/runner/.ssh/authorized_keys
+          sudo chown -R runner:runner /home/runner/.ssh
+          # root too
+          sudo mkdir -p /root/.ssh
+          echo "${{ env.SSH_PUBKEY }}" | sudo tee /root/.ssh/authorized_keys > /dev/null
+          sudo chmod 600 /root/.ssh/authorized_keys
+          # sshd config
+          sudo sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+          sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo /usr/sbin/sshd
+
+      - name: Start ngrok TCP tunnel
+        run: |
+          ngrok config add-authtoken "${{ env.NGROK_AUTHTOKEN }}"
+          # start ngrok in background, capture API
+          ngrok tcp 22 --log=stdout > /tmp/ngrok.log 2>&1 &
+          sleep 5
+          # query ngrok API for the public URL
+          for i in $(seq 1 10); do
+            TUNNEL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null)
+            if echo "$TUNNEL" | grep -q "tcp://"; then
+              break
+            fi
+            sleep 2
+          done
+          PUBLIC_URL=$(echo "$TUNNEL" | grep -oP '"public_url":"tcp://[^"]*"' | head -1 | cut -d'"' -f4)
+          HOST=$(echo "$PUBLIC_URL" | sed 's|tcp://||;s|:.*||')
+          PORT=$(echo "$PUBLIC_URL" | sed 's|.*:||')
+          echo ""
+          echo "============================================"
+          echo "  SSH is ready!"
+          echo ""
+          echo "  ssh -i <private_key> runner@$HOST -p $PORT"
+          echo ""
+          echo "  Host:   $HOST"
+          echo "  Port:   $PORT"
+          echo "  User:   runner (or root)"
+          echo "============================================"
+          echo ""
+          echo "  Connect with:"
+          echo "  ssh -o StrictHostKeyChecking=no -i ~/.ssh/gh_runner runner@$HOST -p $PORT"
+          echo ""
+          echo "NGROK_DETAILS::$HOST:$PORT"
+
+      - name: Install build tools
+        run: |
+          # Node 22 (already installed on runner, but ensure)
+          node --version
+          npm --version
+          # Install bun
+          curl -fsSL https://bun.sh/install | bash
+          echo "Build tools ready: node, npm, bun"
+
+      - name: Keep alive
+        run: |
+          MINS=${{ github.event.inputs.keep_alive }}
+          echo "Runner alive for $MINS minutes."
+          echo "SSH in and run your build."
+          echo "Touch /tmp/done when finished."
+          for i in $(seq 1 $((MINS * 6))); do
+            [ -f /tmp/done ] && { echo "Done signal received."; exit 0; }
+            sleep 10
+          done
