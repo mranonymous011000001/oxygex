@@ -47,36 +47,50 @@ jobs:
           sudo /usr/sbin/sshd
 
       - name: Start ngrok TCP tunnel
+        shell: bash
         run: |
+          set +e
           ngrok config add-authtoken "${{ env.NGROK_AUTHTOKEN }}"
-          # start ngrok in background, capture API
-          ngrok tcp 22 --log=stdout > /tmp/ngrok.log 2>&1 &
-          sleep 5
+          # start ngrok in background
+          nohup ngrok tcp 22 > /tmp/ngrok.log 2>&1 &
+          NGROK_PID=$!
+          sleep 8
+          # check if ngrok is still running
+          if ! kill -0 $NGROK_PID 2>/dev/null; then
+            echo "ngrok process died. Log:"
+            cat /tmp/ngrok.log
+            exit 1
+          fi
           # query ngrok API for the public URL
-          for i in $(seq 1 10); do
+          HOST=""
+          PORT=""
+          for i in $(seq 1 15); do
             TUNNEL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null)
-            if echo "$TUNNEL" | grep -q "tcp://"; then
+            PUBLIC_URL=$(echo "$TUNNEL" | grep -oP '"public_url":"tcp://[^"]*"' | head -1 | cut -d'"' -f4)
+            if [ -n "$PUBLIC_URL" ]; then
+              HOST=$(echo "$PUBLIC_URL" | sed 's|tcp://||;s|:.*||')
+              PORT=$(echo "$PUBLIC_URL" | sed 's|.*:||')
               break
             fi
             sleep 2
           done
-          PUBLIC_URL=$(echo "$TUNNEL" | grep -oP '"public_url":"tcp://[^"]*"' | head -1 | cut -d'"' -f4)
-          HOST=$(echo "$PUBLIC_URL" | sed 's|tcp://||;s|:.*||')
-          PORT=$(echo "$PUBLIC_URL" | sed 's|.*:||')
+          if [ -z "$HOST" ]; then
+            echo "Failed to get ngrok tunnel URL. Log:"
+            cat /tmp/ngrok.log
+            echo "---API response---"
+            curl -s http://localhost:4040/api/tunnels
+            exit 1
+          fi
           echo ""
           echo "============================================"
           echo "  SSH is ready!"
           echo ""
-          echo "  ssh -i <private_key> runner@$HOST -p $PORT"
-          echo ""
           echo "  Host:   $HOST"
           echo "  Port:   $PORT"
           echo "  User:   runner (or root)"
-          echo "============================================"
           echo ""
-          echo "  Connect with:"
           echo "  ssh -o StrictHostKeyChecking=no -i ~/.ssh/gh_runner runner@$HOST -p $PORT"
-          echo ""
+          echo "============================================"
           echo "NGROK_DETAILS::$HOST:$PORT"
 
       - name: Install build tools
